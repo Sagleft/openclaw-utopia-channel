@@ -25,7 +25,19 @@ Adds [Utopia](https://u.is/) messenger support to OpenClaw, enabling you to send
 openclaw plugin install @openclaw/utopia
 ```
 
-### Option 2: Install from local source
+### Option 2: Install with shell script
+
+**macOS / Linux / WSL2:**
+```bash
+curl -fsSL https://openclaw.ai/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://openclaw.ai/install.ps1 | iex
+```
+
+### Option 3: Install from local source
 
 ```bash
 # Clone the OpenClaw repo (if not already)
