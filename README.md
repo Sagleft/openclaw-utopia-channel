@@ -17,6 +17,14 @@ Adds [Utopia](https://u.is/) messenger support to OpenClaw, enabling you to send
 3. **OpenClaw** installed and configured
    - See: https://docs.openclaw.ai/start/getting-started
 
+## How it works
+
+Openclaw is an AI agent orchestrator that allows you to automate many tasks.
+
+This plugin allows you to send requests to your openclaw server via the Utopia messenger.
+
+To do this, you will need 2 Utopia accounts: 1 will be on the server (you can install the Desktop version on the server), 1 for communication (for example, the Utopia mobile app - convenient for communicating with Openclaw from a smartphone).
+
 ## Installation
 
 ### Option 1: Install from npm (recommended)
@@ -68,6 +76,8 @@ Add the following to your OpenClaw config (`~/.openclaw/config.json`):
   }
 }
 ```
+
+- `ADMIN_PUBLIC_KEY_HERE` - this is the public key of your account from which you will send messages.
 
 Or use the CLI:
 
