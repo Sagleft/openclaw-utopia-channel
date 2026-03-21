@@ -36,7 +36,7 @@ To authorize on the server you will need:
 ### Option 1: Install from npm (recommended)
 
 ```bash
-openclaw plugin install @openclaw/utopia
+openclaw plugin install @sagleft/openclaw-utopia
 ```
 
 ### Option 2: Install with shell script
