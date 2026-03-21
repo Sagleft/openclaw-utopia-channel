@@ -1,5 +1,5 @@
 {
-  "id": "utopia",
+  "id": "openclaw-utopia",
   "channels": ["utopia"],
   "configSchema": {
     "type": "object",

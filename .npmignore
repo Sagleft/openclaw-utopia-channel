@@ -1,3 +1,4 @@
 .gitignore
 README.md
-.git
+docs/
+package-lock.json

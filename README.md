@@ -2,6 +2,8 @@
 
 Adds [Utopia](https://u.is/) messenger support to OpenClaw, enabling you to send and receive messages through the decentralized Utopia network.
 
+For detailed step-by-step instructions with screenshots, [see here](docs/INSTALL.md).
+
 ## Prerequisites
 
 1. **Utopia Desktop Client** installed and running on the same machine (or accessible via network)
@@ -36,7 +38,7 @@ To authorize on the server you will need:
 ### Option 1: Install from npm (recommended)
 
 ```bash
-openclaw plugin install @sagleft/openclaw-utopia
+openclaw plugins install openclaw-utopia
 ```
 
 ### Option 2: Install with shell script

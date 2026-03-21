@@ -4,7 +4,7 @@ import { utopiaPlugin } from "./src/channel.js";
 import { setUtopiaRuntime } from "./src/runtime.js";
 
 const plugin = {
-  id: "utopia",
+  id: "openclaw-utopia",
   name: "Utopia",
   description: "Utopia decentralized messenger channel plugin",
   configSchema: emptyPluginConfigSchema(),
