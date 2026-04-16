@@ -24,6 +24,14 @@
       "order": 56,
       "quickstartAllowFrom": true
     },
+    "compat": {
+      "pluginApi": ">=2026.4.8",
+      "minGatewayVersion": "2026.4.8"
+    },
+    "build": {
+      "openclawVersion": "2026.4.8",
+      "pluginSdkVersion": "2026.4.8"
+    },
     "install": {
       "npmSpec": "openclaw-utopia",
       "localPath": "extensions/utopia",
