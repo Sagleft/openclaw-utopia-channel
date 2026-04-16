@@ -1,12 +1,16 @@
+import { createChannelPairingController } from "openclaw/plugin-sdk/channel-pairing";
 import {
   buildChannelConfigSchema,
-  collectStatusIssuesFromLastError,
-  createDefaultChannelRuntimeState,
   DEFAULT_ACCOUNT_ID,
-  dispatchInboundReplyWithBase,
   formatPairingApproveHint,
   type ChannelPlugin,
-} from "openclaw/plugin-sdk";
+} from "openclaw/plugin-sdk/core";
+import { resolveInboundDirectDmAccessWithRuntime } from "openclaw/plugin-sdk/direct-dm";
+import { dispatchInboundReplyWithBase } from "openclaw/plugin-sdk/irc";
+import {
+  collectStatusIssuesFromLastError,
+  createDefaultChannelRuntimeState,
+} from "openclaw/plugin-sdk/status-helpers";
 import { UtopiaConfigSchema } from "./config-schema.js";
 import { getUtopiaRuntime } from "./runtime.js";
 import {
@@ -57,18 +61,19 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
         String(entry),
       ),
     formatAllowFrom: ({ allowFrom }) =>
-      allowFrom
-        .map((entry) => String(entry).trim())
-        .filter(Boolean),
+      allowFrom.map((entry) => String(entry).trim()).filter(Boolean),
   },
 
   pairing: {
     idLabel: "utopiaPubkey",
     normalizeAllowEntry: (entry) => entry.replace(/^utopia:/i, "").trim(),
-    notifyApproval: async ({ id }) => {
-      const bus = activeBuses.get(DEFAULT_ACCOUNT_ID);
+    notifyApproval: async ({ accountId, id }) => {
+      if (!accountId) {
+        return;
+      }
+      const bus = activeBuses.get(accountId);
       if (bus) {
-        await bus.sendDm(id, "Your pairing request has been approved!");
+        await bus.sendDm(id, "Pairing approved. You can now send DM commands.");
       }
     },
   },
@@ -106,7 +111,7 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
       getUtopiaRuntime().channel.text.chunkMarkdownText(text, limit),
     sendText: async ({ cfg, to, text, accountId }) => {
       const core = getUtopiaRuntime();
-      const aid = accountId ?? DEFAULT_ACCOUNT_ID;
+      const aid = accountId ?? resolveDefaultUtopiaAccountId(cfg);
       const bus = activeBuses.get(aid);
       if (!bus) {
         throw new Error(`Utopia bus not running for account ${aid}`);
@@ -121,7 +126,7 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
       return {
         channel: "utopia" as const,
         to,
-        messageId: `utopia-${Date.now()}`,
+        messageId: `utopia-${crypto.randomUUID()}`,
       };
     },
   },
@@ -174,6 +179,12 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
       const account = ctx.account;
       ctx.setStatus({ accountId: account.accountId });
       ctx.log?.info(`[${account.accountId}] starting Utopia provider`);
+      const core = getUtopiaRuntime();
+      const pairing = createChannelPairingController({
+        core,
+        channel: "utopia",
+        accountId: account.accountId,
+      });
 
       if (!account.configured) {
         throw new Error("Utopia API token not configured");
@@ -200,6 +211,56 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
             return;
           }
 
+          const dmPolicy = account.config.dmPolicy ?? "pairing";
+          const allowFrom = account.config.allowFrom ?? [];
+          const normalizedSenderId = senderPubkey.trim().toLowerCase();
+          const access = await resolveInboundDirectDmAccessWithRuntime({
+            cfg: ctx.cfg,
+            channel: "utopia",
+            accountId: account.accountId,
+            dmPolicy,
+            allowFrom,
+            senderId: normalizedSenderId,
+            rawBody: text,
+            isSenderAllowed: (senderId, allowEntries) => {
+              if (allowEntries.includes("*")) {
+                return true;
+              }
+              const normalizedSender = senderId.trim().toLowerCase();
+              return allowEntries.some((entry) => {
+                const normalized = entry
+                  .replace(/^utopia:/i, "")
+                  .trim()
+                  .toLowerCase();
+                return normalized === normalizedSender;
+              });
+            },
+            runtime: core.channel.commands,
+            readStoreAllowFrom: pairing.readStoreForDmPolicy,
+          });
+
+          if (access.access.decision !== "allow") {
+            if (access.access.decision === "pairing") {
+              await pairing.issueChallenge({
+                senderId: normalizedSenderId,
+                senderIdLine: `Your Utopia pubkey: ${senderPubkey}`,
+                meta: { name: senderNick || undefined },
+                sendPairingReply: async (text) => {
+                  await reply(text);
+                },
+                onReplyError: (err) => {
+                  ctx.log?.warn?.(
+                    `[${account.accountId}] pairing reply failed for ${senderPubkey}: ${String(err)}`,
+                  );
+                },
+              });
+            }
+            ctx.log?.info?.(
+              `[${account.accountId}] drop DM from ${senderPubkey} (${access.access.reason})`,
+            );
+            return;
+          }
+
           const route = ctx.channelRuntime.routing.resolveAgentRoute({
             cfg: ctx.cfg,
             channel: "utopia",
@@ -207,18 +268,27 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
             peer: { kind: "direct", id: senderPubkey },
           });
 
-          const storePath = ctx.channelRuntime.session.resolveStorePath(undefined, {
+          // Honor configured `session.store` so inbound history does not silently diverge.
+          const storePath = ctx.channelRuntime.session.resolveStorePath(ctx.cfg.session?.store, {
             agentId: route.agentId,
           });
 
           const ctxPayload = ctx.channelRuntime.reply.finalizeInboundContext({
             Body: text,
+            // NOTE: Utopia inbound payload must include routing fields so session delivery
+            // persistence (resolveLastChannelRaw/resolveLastToRaw) can record a stable DM route,
+            // especially when `session.dmScope` uses the default "main" session.
             From: senderPubkey,
+            To: senderPubkey,
+            OriginatingChannel: "utopia",
+            OriginatingTo: senderPubkey,
             SenderName: senderNick,
             AccountId: account.accountId,
             Provider: "utopia",
+            Surface: "utopia",
             ChatType: "direct",
             SessionKey: route.sessionKey,
+            CommandAuthorized: access.commandAuthorized,
           });
 
           await dispatchInboundReplyWithBase({
@@ -278,8 +348,15 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
         `[${account.accountId}] Utopia provider started (pubkey: ${bus.publicKey}, nick: ${bus.nick})`,
       );
 
-      // Stay pending until the abort signal fires (gateway stops the channel)
+      // Stay pending until the abort signal fires (gateway stops the channel).
+      // Important: resolve immediately if already aborted, because `abort` can fire
+      // before we reach this await while `startUtopiaBus()` is still awaiting startup.
       await new Promise<void>((resolve) => {
+        if (ctx.abortSignal.aborted) {
+          resolve();
+          return;
+        }
+
         ctx.abortSignal.addEventListener("abort", () => resolve(), { once: true });
       });
 
@@ -301,7 +378,8 @@ export const utopiaPlugin: ChannelPlugin<ResolvedUtopiaAccount> = {
         await getUtopiaRuntime().config.writeConfigFile(nextCfg);
       }
 
-      const loggedOut = !resolveUtopiaAccount({ cfg: cleared ? nextCfg : cfg, accountId }).configured;
+      const loggedOut = !resolveUtopiaAccount({ cfg: cleared ? nextCfg : cfg, accountId })
+        .configured;
       return { cleared, loggedOut };
     },
   },
